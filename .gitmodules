@@ -1,0 +1,3 @@
+[submodule "mono-fuse"]
+	path = mono-fuse
+	url = https://github.com/jonpryor/mono-fuse.git
