@@ -1,6 +1,5 @@
 ﻿using System;
 using System.IO;
-using System.Diagnostics;
 
 namespace EncryptedOneDrive
 {
@@ -11,6 +10,7 @@ namespace EncryptedOneDrive
             string confDir = Path.Combine (Environment.GetFolderPath (Environment.SpecialFolder.ApplicationData), "EncryptedOneDrive");
             if (!Directory.Exists (confDir))
                 Directory.CreateDirectory (confDir);
+
             string tokenFile = Path.Combine (confDir, "token.txt");
             if (!File.Exists (tokenFile))
                 throw new FileNotFoundException (tokenFile);
@@ -20,17 +20,18 @@ namespace EncryptedOneDrive
             }
 
             OneDriveClient oneDriveClient = new OneDriveClient (token);
-            FileSystem fs = new FileSystem (oneDriveClient);
-
-            if (Environment.OSVersion.Platform == PlatformID.Unix) {
-                // Mono-FUSE
-                using (Fuse fuse = new Fuse (fs)) {
-                    args = fuse.ParseFuseArguments (args);
-                    fuse.MountPoint = "/mnt/fuse";
-                    fuse.Start();
+            CryptoManager cryptoMgr = new CryptoManager ("password", "encrypted-userspace-filesystem-over-onedrive");
+            using (FileSystem fs = new FileSystem (oneDriveClient, cryptoMgr)) {
+                if (Environment.OSVersion.Platform == PlatformID.Unix) {
+                    // Mono-FUSE
+                    using (Fuse fuse = new Fuse (fs)) {
+                        args = fuse.ParseFuseArguments (args);
+                        fuse.MountPoint = "/mnt/fuse";
+                        fuse.Start();
+                    }
+                } else {
+                    // Dokan.NET (TODO)
                 }
-            } else {
-                // Dokan.NET (TODO)
             }
         }
     }

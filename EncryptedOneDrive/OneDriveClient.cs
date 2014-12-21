@@ -32,6 +32,7 @@ namespace EncryptedOneDrive
                 AccessTokenEscaped = token;
             }
             CacheLifetime = TimeSpan.FromHours (1);
+            GetEntry ("/");
         }
 
         public TimeSpan CacheLifetime { get; set; }
@@ -73,7 +74,7 @@ namespace EncryptedOneDrive
             string id = Resolve (path);
             if (id == null)
                 return false;
-            var ret = DeleteObject (id);
+            var ret = DeleteObject (path, id);
 
             List<string> removeKeys = new List<string> ();
             _cacheLock.EnterReadLock ();
@@ -103,6 +104,7 @@ namespace EncryptedOneDrive
                 return null;
             if (latest && !fetchNow) {
                 string uri = LiveBaseUri + id + "?access_token=" + AccessTokenEscaped;
+                Console.WriteLine ("[OneDriveClient] Get Property: {0} {1}", path, uri);
                 HttpWebRequest req = (HttpWebRequest)WebRequest.Create (uri);
                 JsonFilesResponseEntry data;
                 using (HttpWebResponse res = (HttpWebResponse)req.GetResponse ()) {
@@ -151,6 +153,13 @@ namespace EncryptedOneDrive
 
         public Stream Download (string path)
         {
+            long contentLength;
+            return Download (path, out contentLength);
+        }
+
+        public Stream Download (string path, out long contentLength)
+        {
+            contentLength = -1;
             path = NormalizePath (path);
             string id = Resolve (path);
             if (id == null)
@@ -162,17 +171,39 @@ namespace EncryptedOneDrive
                 throw new IOException ();
                 
             string uri = LiveBaseUri + id + "/content?access_token=" + AccessTokenEscaped;
+            Console.WriteLine ("[OneDriveClient] Download: {0} {1}", path, uri);
             HttpWebRequest req = (HttpWebRequest)WebRequest.Create (uri);
-            using (HttpWebResponse res = (HttpWebResponse)req.GetResponse ()) {
-                if (res.StatusCode != HttpStatusCode.OK)
-                    throw new HttpException (res.StatusCode);
-                return res.GetResponseStream ();
+            HttpWebResponse res = (HttpWebResponse)req.GetResponse ();
+            if (res.StatusCode != HttpStatusCode.OK)
+                throw new HttpException (res.StatusCode);
+            contentLength = res.ContentLength;
+            return res.GetResponseStream ();
+        }
+
+        public byte[] DownloadBytes (string path)
+        {
+            long len;
+            using (Stream strm = Download (path, out len)) {
+                byte[] raw = new byte[len];
+                int read = 0;
+                while (read < raw.Length) {
+                    int ret = strm.Read (raw, read, raw.Length - read);
+                    if (ret <= 0)
+                        throw new IOException ();
+                    read += ret;
+                }
+                return raw;
             }
         }
 
         public void Upload (string path, byte[] raw)
         {
-            Upload (path, new MemoryStream (raw));
+            Upload (path, raw, 0, raw.Length);
+        }
+
+        public void Upload (string path, byte[] raw, int offset, int count)
+        {
+            Upload (path, new MemoryStream (raw, offset, count));
         }
 
         /// <returns>>true: created, false: overwrite</returns>
@@ -187,6 +218,7 @@ namespace EncryptedOneDrive
             string parentId = Resolve (parentPath);
 
             string uri = LiveBaseUri + parentId + "/files/" + name + "?access_token=" + AccessTokenEscaped;
+            Console.WriteLine ("[OneDriveClient] Upload: {0} {1}", path, uri);
             HttpWebRequest req = (HttpWebRequest)WebRequest.Create (uri);
             req.Method = "PUT";
             req.ContentLength = strm.Length;
@@ -268,6 +300,7 @@ namespace EncryptedOneDrive
                 path += "/";
 
             string uri = LiveBaseUri + id + "/files?access_token=" + AccessTokenEscaped;
+            Console.WriteLine ("[OneDriveClient] List: {0} {1}", path, uri);
             HttpWebRequest req = (HttpWebRequest)WebRequest.Create (uri);
             JsonFilesResponseEntry[] data;
             using (HttpWebResponse res = (HttpWebResponse)req.GetResponse ()) {
@@ -310,6 +343,7 @@ namespace EncryptedOneDrive
         bool CreateDirectory (string parentFolderId, string name, string fullPath)
         {
             string uri = LiveBaseUri + parentFolderId;
+            Console.WriteLine ("[OneDriveClient] mkdir: {0} {1}", fullPath, uri);
             HttpWebRequest req = (HttpWebRequest)WebRequest.Create (uri);
             req.Method = "POST";
             req.ContentType = MIME_JSON;
@@ -335,9 +369,10 @@ namespace EncryptedOneDrive
             return false; // 既にある場合は400が帰ってくるので...
         }
 
-        bool DeleteObject (string id)
+        bool DeleteObject (string path, string id)
         {
             string uri = LiveBaseUri + id + "?access_token=" + AccessTokenEscaped;
+            Console.WriteLine ("[OneDriveClient] delete {0} {1}", path, uri);
             HttpWebRequest req = (HttpWebRequest)WebRequest.Create (uri);
             req.Method = "DELETE";
             try {

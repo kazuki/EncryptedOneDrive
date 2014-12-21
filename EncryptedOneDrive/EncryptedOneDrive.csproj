@@ -29,7 +29,6 @@
     <Externalconsole>true</Externalconsole>
   </PropertyGroup>
   <Import Project="$(MSBuildBinPath)\Microsoft.CSharp.targets" />
-  <Import Project="../packages/Microsoft.Bcl.Build.1.0.21/build/Microsoft.Bcl.Build.targets" />
   <ItemGroup>
     <Reference Include="System" />
     <Reference Include="System.Runtime.Serialization" />
@@ -45,11 +44,18 @@
     <Compile Include="OneDriveClient.cs" />
     <Compile Include="Fuse.cs" />
     <Compile Include="Utility.cs" />
+    <Compile Include="CryptoManager.cs" />
+    <Compile Include="Security\IAuthenticatedCryptoTransform.cs" />
+    <Compile Include="Security\IAuthenticatedEncryptionAlgorithm.cs" />
+    <Compile Include="Security\BlockCiperCTRHMAC.cs" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\DokanNet\DokanNet.csproj">
       <Project>{A09B408A-26A0-4FF8-83D5-6E1B1DA5F63C}</Project>
       <Name>DokanNet</Name>
     </ProjectReference>
+  </ItemGroup>
+  <ItemGroup>
+    <Folder Include="Security\" />
   </ItemGroup>
 </Project>
