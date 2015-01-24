@@ -1,4 +1,4 @@
-﻿// Copyright (C) 2014-2015  Kazuki Oikawa
+﻿// Copyright (C) 2014  Kazuki Oikawa
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU General Public License as published by
@@ -13,13 +13,24 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-using System;
+using System.IO;
 
-namespace EncryptedOneDrive.Security
+namespace EncryptedOneDrive.OneDrive
 {
-    public interface IAuthenticatedCryptoTransform : IDisposable
+    public interface IRestClient
     {
-        void TransformBlock (byte[] inputBuffer, int inputOffset, int inputCount, byte[] outputBuffer, int outputOffset);
-        byte[] TransformFinal ();
+        string Upload (string folderId, string name, Stream strm);
+
+        Stream Download (string fileId);
+
+        ObjectProperty GetProperty (string objectId);
+
+        ObjectProperty[] GetChildren (string folderId);
+
+        ObjectProperty CreateDirectory (string folderId, string name);
+
+        void Delete (string objectId);
+
+        void GetQuota (out long quota, out long available);
     }
 }

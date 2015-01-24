@@ -1,3 +1,6 @@
 [submodule "mono-fuse"]
 	path = mono-fuse
 	url = https://github.com/jonpryor/mono-fuse.git
+[submodule "leveldb-sharp"]
+	path = leveldb-sharp
+	url = https://github.com/kazuki/leveldb-sharp.git

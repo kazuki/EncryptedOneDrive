@@ -1,6 +1,22 @@
-﻿using System;
-using System.IO;
+﻿// Copyright (C) 2014-2015  Kazuki Oikawa
+//
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+using System;
 using System.Collections.Generic;
+using System.Diagnostics;
+using System.IO;
 using System.Threading;
 using Mono.Fuse;
 using Mono.Unix.Native;
@@ -14,10 +30,10 @@ namespace EncryptedOneDrive
         Dictionary<int, object> _handles = new Dictionary<int, object> ();
 
         static readonly DateTime EpochBase = new DateTime(1970, 1, 1, 0, 0, 0, DateTimeKind.Utc);
-        readonly EncryptedOneDrive.FileSystem _fs;
+        readonly FileSystemBase _fs;
         readonly uint uid, gid;
 
-        public Fuse (EncryptedOneDrive.FileSystem fs)
+        public Fuse (FileSystemBase fs)
         {
             _fs = fs;
             uid = Mono.Unix.Native.Syscall.getuid ();
@@ -32,18 +48,22 @@ namespace EncryptedOneDrive
 
         protected override Errno OnGetPathStatus (string path, out Stat stat)
         {
-            Console.WriteLine ("OnGetPathStatus: {0}", path);
+            Debug.WriteLine ("OnGetPathStatus: {0}", path);
             stat = new Stat ();
-            var x = _fs.Stat (path);
-            if (x == null)
+            try {
+                var x = _fs.Stat (path);
+                CopyStat (x, ref stat);
+                return 0;
+            } catch (FileNotFoundException) {
                 return Errno.ENOENT;
-            CopyStat (x, ref stat);
-            return 0;
+            } catch {
+                return Errno.EIO;
+            }
         }
 
         protected override Errno OnReadDirectory (string directory, OpenedPathInfo info, out IEnumerable<DirectoryEntry> paths)
         {
-            Console.WriteLine ("OnReadDirectory: {0}", directory);
+            Debug.WriteLine ("OnReadDirectory: {0}", directory);
             paths = null;
             var x = _fs.List (directory);
             if (x == null)
@@ -60,17 +80,17 @@ namespace EncryptedOneDrive
             return 0;
         }
 
-        void CopyStat (FileSystem.Entry x, ref Stat s)
+        void CopyStat (FileProperty x, ref Stat s)
         {
             s.st_uid = uid;
             s.st_gid = gid;
-            s.st_ctime = (long)(x.CreationTimeUtc - EpochBase).TotalSeconds;
-            s.st_mtime = (long)(x.LastWriteTimeUtc - EpochBase).TotalSeconds;
+            s.st_ctime = (long)(x.CreationTime - EpochBase).TotalSeconds;
+            s.st_mtime = s.st_ctime;
+            //s.st_mtime = (long)(x.LastWriteTime - EpochBase).TotalSeconds;
             if (x.IsFile) {
-                FileSystem.FileEntry e = (FileSystem.FileEntry)x;
                 s.st_mode = FilePermissions.S_IFREG | NativeConvert.FromOctalPermissionString ("0444");
                 s.st_nlink = 1;
-                s.st_size = e.Size;
+                s.st_size = x.Size;
             } else {
                 s.st_mode = FilePermissions.S_IFDIR | NativeConvert.FromOctalPermissionString ("0755");
                 s.st_nlink = 2;
@@ -79,7 +99,7 @@ namespace EncryptedOneDrive
 
         protected override Errno OnOpenHandle (string file, OpenedPathInfo info)
         {
-            Console.WriteLine ("OnOpenHandle: {0}", file);
+            Debug.WriteLine ("OnOpenHandle: {0}", file);
             if (!info.OpenAccess.HasFlag (OpenFlags.O_RDONLY))
                 return Errno.EACCES;
 
@@ -92,20 +112,28 @@ namespace EncryptedOneDrive
 
         protected override Errno OnReadHandle (string file, OpenedPathInfo info, byte[] buf, long offset, out int bytesWritten)
         {
-            Console.WriteLine ("OnReadHandle: {0} off={1}", file, offset);
+            Debug.WriteLine ("OnReadHandle: {0} off={1}", file, offset);
             bytesWritten = -1;
             Stream strm = GetStream (info.Handle);
-            if (strm == null || strm.Position != offset)
+            if (strm == null)
                 return Errno.EIO;
-            if (!strm.CanRead)
-                return Errno.EINVAL;
-            bytesWritten = strm.Read (buf, 0, buf.Length);
+            lock (strm) {
+                if (!strm.CanRead)
+                    return Errno.EINVAL;
+                strm.Seek (offset, SeekOrigin.Begin);
+                try {
+                    bytesWritten = strm.Read (buf, 0, buf.Length);
+                } catch (Exception e) {
+                    Debug.WriteLine (e);
+                    throw e;
+                }
+            }
             return 0;
         }
 
         protected override Errno OnCreateHandle (string file, OpenedPathInfo info, FilePermissions mode)
         {
-            Console.WriteLine ("OnCreateHandle: {0}", file);
+            Debug.WriteLine ("OnCreateHandle: {0}", file);
             Stream strm = _fs.WriteOpen (file);
             if (strm == null)
                 return Errno.EIO;
@@ -115,41 +143,52 @@ namespace EncryptedOneDrive
 
         protected override Errno OnWriteHandle (string file, OpenedPathInfo info, byte[] buf, long offset, out int bytesRead)
         {
-            Console.WriteLine ("OnWriteHandle: {0} off={1}", file, offset);
+            Debug.WriteLine ("OnWriteHandle: {0} off={1}", file, offset);
             bytesRead = -1;
             Stream strm = GetStream (info.Handle);
             if (strm == null || strm.Position != offset)
                 return Errno.EIO;
-            if (!strm.CanWrite)
-                return Errno.EINVAL;
-            strm.Write (buf, 0, buf.Length);
+            lock (strm) {
+                if (!strm.CanWrite)
+                    return Errno.EINVAL;
+                try {
+                    strm.Write (buf, 0, buf.Length);
+                } catch (Exception e) {
+                    Debug.WriteLine (e);
+                    throw e;
+                }
+            }
             bytesRead = buf.Length;
             return 0;
         }
 
         protected override Errno OnFlushHandle (string file, OpenedPathInfo info)
         {
-            Console.WriteLine ("OnFlushHandle: {0}", file);
+            Debug.WriteLine ("OnFlushHandle: {0}", file);
             Stream strm = GetStream (info.Handle);
             if (strm == null)
                 return Errno.EIO;
-            if (strm.CanWrite)
-                strm.Flush ();
+            lock (strm) {
+                if (strm.CanWrite)
+                    strm.Flush ();
+            }
             return 0;
         }
 
         protected override Errno OnReleaseHandle (string file, OpenedPathInfo info)
         {
-            Console.WriteLine ("OnReleaseHandle: {0}", file);
+            Debug.WriteLine ("OnReleaseHandle: {0}", file);
             object obj;
             using (var l = _lock.WriteLock ()) {
                 if (!_handles.TryGetValue (info.Handle.ToInt32 (), out obj))
                     return Errno.EINVAL;
                 _handles.Remove (info.Handle.ToInt32 ());
             }
-            Stream strm = obj as Stream;
+            var strm = obj as Stream;
             if (strm != null) {
-                strm.Close ();
+                lock (strm) {
+                    strm.Close ();
+                }
                 return 0;
             }
             return Errno.EIO;
@@ -157,26 +196,35 @@ namespace EncryptedOneDrive
 
         protected override Errno OnCreateDirectory (string directory, FilePermissions mode)
         {
-            Console.WriteLine ("OnCreateDirectory: {0}", directory);
-            if (_fs.CreateDirectory (directory))
-                return 0;
-            return Errno.EIO;
+            Debug.WriteLine ("OnCreateDirectory: {0}", directory);
+            try {
+                _fs.CreateDirectory (directory);
+            } catch {
+                return Errno.EIO;
+            }
+            return 0;
         }
 
         protected override Errno OnRemoveDirectory (string directory)
         {
-            Console.WriteLine ("OnRemoveDirectory: {0}", directory);
-            if (_fs.DeleteDirectory (directory))
-                return 0;
-            return Errno.EIO;
+            Debug.WriteLine ("OnRemoveDirectory: {0}", directory);
+            try {
+                _fs.DeleteDirectory (directory);
+            } catch {
+                return Errno.EIO;
+            }
+            return 0;
         }
 
         protected override Errno OnRemoveFile (string file)
         {
-            Console.WriteLine ("OnRemoveFile: {0}", file);
-            if (_fs.DeleteFile (file))
-                return 0;
-            return Errno.EIO;
+            Debug.WriteLine ("OnRemoveFile: {0}", file);
+            try {
+                _fs.DeleteFile (file);
+            } catch {
+                return Errno.EIO;
+            }
+            return 0;
         }
 
         IntPtr RegisterState (object state)
@@ -198,22 +246,40 @@ namespace EncryptedOneDrive
             }
         }
 
+        protected override Errno OnGetFileSystemStatus (string path, out Statvfs buf)
+        {
+            Debug.WriteLine ("OnGetFileSystemStatus: {0}", path);
+            long total, avail;
+            buf = new Statvfs ();
+            try {
+                _fs.GetStorageUsage (out total, out avail);
+                buf.f_bsize = 1;
+                buf.f_frsize = 1;
+                buf.f_blocks = (ulong)total;
+                buf.f_bfree = (ulong)avail;
+                buf.f_bavail = (ulong)avail;
+                buf.f_files = 0;
+                buf.f_ffree = 0;
+                buf.f_favail = 0;
+                buf.f_fsid = 0;
+                buf.f_flag = 0;
+                buf.f_namemax = 1024;
+                return 0;
+            } catch {
+                return Errno.EIO;
+            }
+        }
+
         #if false
         protected override Errno OnAccessPath (string path, AccessModes mode)
         {
-            Console.WriteLine ("OnAccessPath: {0}", path);
+            Debug.WriteLine ("OnAccessPath: {0}", path);
             return base.OnAccessPath (path, mode);
-        }
-
-        protected override Errno OnGetFileSystemStatus (string path, out Statvfs buf)
-        {
-            Console.WriteLine ("OnGetFileSystemStatus: {0}", path);
-            return base.OnGetFileSystemStatus (path, out buf);
         }
 
         protected override Errno OnGetHandleStatus (string file, OpenedPathInfo info, out Stat buf)
         {
-            Console.WriteLine ("OnGetHandleStatus: {0}", file);
+            Debug.WriteLine ("OnGetHandleStatus: {0}", file);
             return base.OnGetHandleStatus (file, info, out buf);
         }
         #endif

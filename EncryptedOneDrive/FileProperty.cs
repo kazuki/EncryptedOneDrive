@@ -1,4 +1,4 @@
-﻿// Copyright (C) 2014-2015  Kazuki Oikawa
+﻿// Copyright (C) 2014  Kazuki Oikawa
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU General Public License as published by
@@ -15,11 +15,24 @@
 
 using System;
 
-namespace EncryptedOneDrive.Security
+namespace EncryptedOneDrive
 {
-    public interface IAuthenticatedCryptoTransform : IDisposable
+    public class FileProperty
     {
-        void TransformBlock (byte[] inputBuffer, int inputOffset, int inputCount, byte[] outputBuffer, int outputOffset);
-        byte[] TransformFinal ();
+        public string Name { get; protected set; }
+        public long Size { get; protected set; }
+        public DateTime CreationTime { get; protected set; }
+
+        public bool IsFile { get; protected set; }
+        public bool IsDirectory { get { return !IsFile; } }
+
+        public FileProperty (string name, long size,
+            bool isFile, DateTime creationTime)
+        {
+            Name = name;
+            Size = size;
+            IsFile = isFile;
+            CreationTime = creationTime;
+        }
     }
 }

@@ -1,11 +1,26 @@
-﻿using System;
+﻿// Copyright (C) 2014-2015  Kazuki Oikawa
+//
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+using System;
 using System.Security.Cryptography;
 
-namespace EncryptedOneDrive
+namespace EncryptedOneDrive.Security
 {
-    public class BlockCiperCTRHMAC<TCiper, THMAC> : IAuthenticatedEncryptionAlgorithm where TCiper: SymmetricAlgorithm, new() where THMAC : HMAC, new()
+    public class BlockCipherCTRHMAC<TCiper, THMAC> : IAuthenticatedEncryptionAlgorithm where TCiper: SymmetricAlgorithm, new() where THMAC : HMAC, new()
     {
-        public BlockCiperCTRHMAC()
+        public BlockCipherCTRHMAC()
         {
             SymmetricAlgorithmInstance = new TCiper ();
             SymmetricAlgorithmInstance.Mode = CipherMode.ECB;
@@ -44,16 +59,14 @@ namespace EncryptedOneDrive
         {
             if (key.Length != KeyByteSize || iv.Length != IVByteSize)
                 throw new ArgumentException ();
-            return new Transform (this, key, iv, aad, null);
+            return new Transform (this, key, iv, aad, null, true);
         }
 
         public IAuthenticatedCryptoTransform CreateDecryptor (byte[] key, byte[] iv, byte[] aad, byte[] tag)
         {
-            if (tag == null)
-                throw new ArgumentNullException ();
-            if (key.Length != KeyByteSize || iv.Length != IVByteSize || tag.Length != TagByteSize)
+            if (key.Length != KeyByteSize || iv.Length != IVByteSize || (tag != null && tag.Length != TagByteSize))
                 throw new ArgumentException ();
-            return new Transform (this, key, iv, aad, tag);
+            return new Transform (this, key, iv, aad, tag, false);
         }
 
         class Transform : IAuthenticatedCryptoTransform
@@ -66,18 +79,18 @@ namespace EncryptedOneDrive
             int _pos = 0;
             bool _encryptMode;
 
-            public Transform (BlockCiperCTRHMAC<TCiper,THMAC> owner, byte[] key, byte[] iv, byte[] aad, byte[] tag)
+            public Transform (BlockCipherCTRHMAC<TCiper,THMAC> owner, byte[] key, byte[] iv, byte[] aad, byte[] tag, bool isEncrypt)
             {
                 byte[] cipherKey = new byte[owner.SymmetricAlgorithmInstance.KeySize / 8];
                 byte[] hmacKey = new byte[key.Length - cipherKey.Length];
                 Buffer.BlockCopy (key, 0, cipherKey, 0, cipherKey.Length);
                 Buffer.BlockCopy (key, cipherKey.Length, hmacKey, 0, hmacKey.Length);
                 _tag = tag;
-                _encryptMode = (tag == null);
+                _encryptMode = isEncrypt;
 
                 _ct = owner.SymmetricAlgorithmInstance.CreateEncryptor (cipherKey, null);
                 _cipher = new byte[iv.Length];
-                _pos = _cipher.Length;
+                _pos = 0;
                 _mac = new THMAC();
                 _mac.Key = hmacKey;
                 _mac.Initialize();
@@ -95,7 +108,7 @@ namespace EncryptedOneDrive
                     _mac.TransformBlock (inputBuffer, inputOffset, inputCount, inputBuffer, inputOffset);
                 }
 
-                if (_pos < cipher.Length) {
+                if (_pos > 0) {
                     int size = Math.Min (cipher.Length - _pos, inputCount);
                     for (int i = 0; i < size; ++i) {
                         outputBuffer [outputOffset + i] = (byte)(inputBuffer [inputOffset + i] ^ cipher [_pos + i]);
@@ -123,7 +136,7 @@ namespace EncryptedOneDrive
                     for (int i = 0; i < inputCount; ++i) {
                         outputBuffer [outputOffset + i] = (byte)(inputBuffer [inputOffset + i] ^ cipher [i]);
                     }
-                    _pos += inputCount;
+                    _pos = inputCount;
                 }
 
             ComputeMAC:
@@ -136,7 +149,7 @@ namespace EncryptedOneDrive
             {
                 _ct.TransformBlock (counter, 0, counter.Length, cipher, 0);
                 _pos = 0;
-                for (int i = counter.Length - 1; i >= 0 && --_counter [_counter.Length - 1] == 0; --i);
+                for (int i = counter.Length - 1; i >= 0 && ++_counter [i] == 0; --i);
             }
 
             public byte[] TransformFinal ()

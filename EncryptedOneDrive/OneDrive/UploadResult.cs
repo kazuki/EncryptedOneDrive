@@ -1,4 +1,4 @@
-﻿// Copyright (C) 2014-2015  Kazuki Oikawa
+﻿// Copyright (C) 2014  Kazuki Oikawa
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU General Public License as published by
@@ -13,13 +13,20 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-using System;
+using System.Runtime.Serialization;
 
-namespace EncryptedOneDrive.Security
+namespace EncryptedOneDrive.OneDrive
 {
-    public interface IAuthenticatedCryptoTransform : IDisposable
+    [DataContract]
+    internal class UploadResult
     {
-        void TransformBlock (byte[] inputBuffer, int inputOffset, int inputCount, byte[] outputBuffer, int outputOffset);
-        byte[] TransformFinal ();
+        [DataMember(Name = "id")]
+        public string ID { get; set; }
+
+        [DataMember(Name = "name")]
+        public string Name { get; set; }
+
+        [DataMember(Name = "source")]
+        public string Source { get; set; }
     }
 }

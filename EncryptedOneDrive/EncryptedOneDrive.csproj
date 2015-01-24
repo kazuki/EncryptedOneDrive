@@ -40,22 +40,42 @@
   </ItemGroup>
   <ItemGroup>
     <Compile Include="AppLoader.cs" />
-    <Compile Include="FileSystem.cs" />
-    <Compile Include="OneDriveClient.cs" />
     <Compile Include="Fuse.cs" />
     <Compile Include="Utility.cs" />
     <Compile Include="CryptoManager.cs" />
     <Compile Include="Security\IAuthenticatedCryptoTransform.cs" />
     <Compile Include="Security\IAuthenticatedEncryptionAlgorithm.cs" />
-    <Compile Include="Security\BlockCiperCTRHMAC.cs" />
+    <Compile Include="Security\LiveConnectClient.cs" />
+    <Compile Include="Config.cs" />
+    <Compile Include="AssemblyInfo.cs" />
+    <Compile Include="OneDrive\IRestClient.cs" />
+    <Compile Include="OneDrive\RestClient.cs" />
+    <Compile Include="OneDrive\UploadResult.cs" />
+    <Compile Include="OneDrive\ObjectProperty.cs" />
+    <Compile Include="OneDrive\FileListResult.cs" />
+    <Compile Include="OneDrive\QuotaResult.cs" />
+    <Compile Include="OneDrive\FileSystem.cs" />
+    <Compile Include="OldFileSystem.cs" />
+    <Compile Include="OldOneDriveClient.cs" />
+    <Compile Include="FileProperty.cs" />
+    <Compile Include="IKeyValueStore.cs" />
+    <Compile Include="LevelDB.cs" />
+    <Compile Include="FileSystemBase.cs" />
+    <Compile Include="FileSystem.cs" />
+    <Compile Include="Security\BlockCipherCTRHMAC.cs" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\DokanNet\DokanNet.csproj">
       <Project>{A09B408A-26A0-4FF8-83D5-6E1B1DA5F63C}</Project>
       <Name>DokanNet</Name>
     </ProjectReference>
+    <ProjectReference Include="..\leveldb-sharp\leveldb-sharp.csproj">
+      <Project>{8DD96596-38AC-46DD-80C1-75D9EBE585EA}</Project>
+      <Name>leveldb-sharp</Name>
+    </ProjectReference>
   </ItemGroup>
   <ItemGroup>
     <Folder Include="Security\" />
+    <Folder Include="OneDrive\" />
   </ItemGroup>
 </Project>
